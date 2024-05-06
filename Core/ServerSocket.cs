@@ -1,6 +1,6 @@
 #if ENABLE_WEBRTC && (UNITY_STANDALONE || UNITY_SERVER || UNITY_EDITOR)
 
-using FishNet.Utility.Performance;
+using GameKit.Dependencies.Utilities;
 using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
@@ -51,11 +51,19 @@ namespace FishNet.Transporting.FishyWebRTC.Server
 		/// <summary>
 		/// Ids to disconnect next iteration. This ensures data goes through to disconnecting remote connections. This may be removed in a later release.
 		/// </summary>
-		private ListCache<int> _disconnectingNext = new ListCache<int>();
+		private List<int> _disconnectingNext = CollectionCaches<int>.RetrieveList();
+		/// <summary>
+		/// Entries written next.
+		/// </summary>
+		private int writtenNext = 0;
 		/// <summary>
 		/// Ids to disconnect immediately.
 		/// </summary>
-		private ListCache<int> _disconnectingNow = new ListCache<int>();
+		private List<int> _disconnectingNow = CollectionCaches<int>.RetrieveList();
+		/// <summary>
+		/// Entries currently written.
+		/// </summary>
+		private int writtenNow = 0;
 		/// <summary>
 		/// ConnectionEvents which need to be handled.
 		/// </summary>
@@ -74,6 +82,9 @@ namespace FishNet.Transporting.FishyWebRTC.Server
 		~ServerSocket()
 		{
 			StopConnection();
+
+			CollectionCaches<int>.StoreAndDefault(ref _disconnectingNext);
+			CollectionCaches<int>.StoreAndDefault(ref _disconnectingNow);
 		}
 
 		/// <summary>
@@ -210,7 +221,7 @@ namespace FishNet.Transporting.FishyWebRTC.Server
 			//Don't disconnect immediately, wait until next command iteration.
 			if (!immediately)
 			{
-				_disconnectingNext.AddValue(connectionId);
+				AddValue(connectionId, _disconnectingNext, ref writtenNext);
 			}
 			//Disconnect immediately.
 			else
@@ -230,9 +241,25 @@ namespace FishNet.Transporting.FishyWebRTC.Server
 		{
 			_clients.Clear();
 			base.ClearPacketQueue(ref _outgoing);
-			_disconnectingNext.Reset();
-			_disconnectingNow.Reset();
+			_disconnectingNext.Clear();
+			writtenNext = 0;
+			_disconnectingNow.Clear();
+			writtenNow = 0;
 			_remoteConnectionEvents.Clear();
+		}
+
+		/// <summary>
+		/// Adds value to Collection.
+		/// </summary>
+		/// <param name="value"></param>
+		public void AddValue<T>(T value, List<T> collection, ref int written)
+		{
+			if (collection.Count <= written)
+				collection.Add(value);
+			else
+				collection[written] = value;
+
+			written++;
 		}
 
 		/// <summary>
@@ -243,26 +270,26 @@ namespace FishNet.Transporting.FishyWebRTC.Server
 		{
 			int count;
 
-			count = _disconnectingNow.Written;
+			count = writtenNow;
 			//If there are disconnect nows.
 			if (count > 0)
 			{
-				List<int> collection = _disconnectingNow.Collection;
+				List<int> collection = _disconnectingNow;
 				for (int i = 0; i < count; i++)
 					StopConnection(collection[i], true);
 
-				_disconnectingNow.Reset();
+				_disconnectingNow.Clear();
 			}
 
-			count = _disconnectingNext.Written;
+			count = writtenNext;
 			//If there are disconnect next.
 			if (count > 0)
 			{
-				List<int> collection = _disconnectingNext.Collection;
+				List<int> collection = _disconnectingNext;
 				for (int i = 0; i < count; i++)
-					_disconnectingNow.AddValue(collection[i]);
+					AddValue(collection[i], _disconnectingNow, ref writtenNow);
 
-				_disconnectingNext.Reset();
+				_disconnectingNext.Clear();
 			}
 		}
 
@@ -293,7 +320,7 @@ namespace FishNet.Transporting.FishyWebRTC.Server
 					//If over the MTU.
 					if (outgoing.Channel == (byte)Channel.Unreliable && segment.Count > _mtu)
 					{
-						base.Transport.NetworkManager.LogWarning($"Server is sending of {segment.Count} length on the unreliable channel, while the MTU is only {_mtu}. The channel has been changed to reliable for this send.");
+						base.Transport.NetworkManager.InternalLogWarning($"Server is sending of {segment.Count} length on the unreliable channel, while the MTU is only {_mtu}. The channel has been changed to reliable for this send.");
 						dm = Common.DeliveryMethod.ReliableOrdered;
 					}
 
