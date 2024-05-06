@@ -179,7 +179,7 @@ namespace FishNet.Transporting.FishyWebRTC.Client
 				//If over the MTU.
 				if (outgoing.Channel == (byte)Channel.Unreliable && segment.Count > _mtu)
 				{
-					base.Transport.NetworkManager.LogWarning($"Client is sending of {segment.Count} length on the unreliable channel, while the MTU is only {_mtu}. The channel has been changed to reliable for this send.");
+					base.Transport.NetworkManager.InternalLogWarning($"Client is sending of {segment.Count} length on the unreliable channel, while the MTU is only {_mtu}. The channel has been changed to reliable for this send.");
 					dm = Common.DeliveryMethod.ReliableOrdered;
 				}
 
